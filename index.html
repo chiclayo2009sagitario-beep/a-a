@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PreguntaGo - PMV</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#2ecc71">
+<style>
+body{font-family:Arial,Helvetica,sans-serif;margin:12px;background:#f4f6f8;color:#222}
+.card{background:#fff;padding:12px;border-radius:8px;margin:10px 0;box-shadow:0 1px 4px rgba(0,0,0,0.06)}
+#gameArea{background:#111;height:320px;border-radius:8px;position:relative;overflow:hidden}
+#player{position:absolute;width:44px;height:44px;bottom:8px;left:50%;transform:translateX(-50%);background:#2ecc71;border-radius:6px}
+.ob{position:absolute;width:40px;height:40px;background:#e74c3c;border-radius:6px}
+#modal{position:fixed;left:0;right:0;top:0;bottom:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.6)}
+.modalContent{background:#fff;padding:12px;border-radius:8px;width:90%;max-width:420px}
+</style>
+</head>
+<body>
+<h1>PreguntaGo (PMV)</h1>
+<div class="card">
+<strong>Banco de preguntas</strong>
+<textarea id="qtext" rows="2" style="width:100%" placeholder="Pregunta..."></textarea>
+<input id="qtime" placeholder="Tiempo segundos" style="width:120px;margin-top:8px">
+<button id="addQ">Agregar pregunta</button>
+<div id="qList" style="margin-top:8px"></div>
+</div>
+
+<div class="card">
+<strong>Juego</strong>
+<div id="gameArea"><div id="player"></div></div>
+<button id="startBtn">Iniciar</button>
+<button id="stopBtn">Detener</button>
+<button id="resetBtn">Reset datos</button>
+</div>
+
+<div id="modal"><div class="modalContent">
+<div id="qBox"></div>
+<button id="solvedBtn">Ya lo hice</button>
+<button id="showAnsBtn">Mostrar respuesta</button>
+<div>Tiempo: <span id="timer">0</span>s</div>
+</div></div>
+
+<div class="card"><strong>Stats</strong><div id="stats">Puntos: <span id="points">0</span> | Sesiones: <span id="played">0</span></div></div>
+
+<script>
+const STORAGE_KEY = 'preguntago_v1';
+function loadData(){ try{ return JSON.parse(localStorage.getItem(STORAGE_KEY))||{questions:[],points:0,sessions:0}; }catch(e){return {questions:[],points:0,sessions:0};}}
+function saveData(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }
+let data = loadData();
+const qListEl = document.getElementById('qList');
+function renderQ(){ qListEl.innerHTML=''; if(data.questions.length===0){ qListEl.innerHTML='<div style="color:#666">No hay preguntas</div>'; return;} data.questions.forEach((q,i)=>{ const d=document.createElement('div'); d.style.padding='6px'; d.innerHTML='<strong>Q'+(i+1)+' ('+(q.time||30)+'s)</strong><div>'+escapeHtml(q.text)+'</div><button data-i="'+i+'" class="del">Eliminar</button>'; qListEl.appendChild(d); }); Array.from(document.getElementsByClassName('del')).forEach(b=>b.onclick=()=>{ data.questions.splice(+b.dataset.i,1); saveData(); renderQ();});}
+function escapeHtml(s){ return (s+'').replace(/[&<>"']/g, function(m){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]; });}
+
+document.getElementById('addQ').onclick = ()=>{ const t=document.getElementById('qtext').value.trim(); const time=parseInt(document.getElementById('qtime').value)||30; if(!t){alert('Escribe la pregunta'); return;} data.questions.push({text:t,time:time}); saveData(); renderQ(); document.getElementById('qtext').value=''; document.getElementById('qtime').value=''; }
+
+const gameArea = document.getElementById('gameArea'); const player = document.getElementById('player');
+let running=false, lanes=3, laneW=0, playerLane=1, obstacles=[], spawnTick=0, raf=0;
+
+function setPlayer(){ laneW = Math.max(60, gameArea.clientWidth/lanes); player.style.left = (playerLane*laneW + (laneW-player.clientWidth)/2) + 'px'; }
+window.addEventListener('resize', setPlayer);
+
+function startGame(){ if(running) return; running=true; data.sessions=(data.sessions||0)+1; saveData(); updateStats(); obstacles.forEach(o=>o.el.remove()); obstacles=[]; spawnTick=0; loop(); }
+function stopGame(){ running=false; if(raf) cancelAnimationFrame(raf); raf=0; }
+function resetData(){ if(!confirm('Resetear datos?')) return; data={questions:[],points:0,sessions:0}; saveData(); renderQ(); updateStats(); alert('Reset OK'); }
+document.getElementById('startBtn').onclick = startGame;
+document.getElementById('stopBtn').onclick = stopGame;
+document.getElementById('resetBtn').onclick = resetData;
+window.addEventListener('keydown', e=>{ if(!running) return; if(e.key==='ArrowLeft'){ if(playerLane>0) playerLane--; setPlayer(); } if(e.key==='ArrowRight'){ if(playerLane<lanes-1) playerLane++; setPlayer(); } });
+
+function spawn(){ const ob=document.createElement('div'); ob.className='ob'; const lane=Math.floor(Math.random()*lanes); ob.style.left = (lane*laneW + (laneW-40)/2)+'px'; ob.style.top='-60px'; gameArea.appendChild(ob); obstacles.push({el:ob,y:-60,lane:lane,speed:1+Math.random()*2}); }
+
+function loop(){ if(!running) return; spawnTick++; if(spawnTick%60===0) spawn(); for(let i=obstacles.length-1;i>=0;i--){ const o=obstacles[i]; o.y += o.speed; if(o.y > gameArea.clientHeight+60){ o.el.remove(); obstacles.splice(i,1); continue; } o.el.style.top = o.y + 'px'; const playerTop = gameArea.clientHeight - player.clientHeight - 8; if(o.y + o.el.clientHeight >= playerTop && o.lane === playerLane){ running=false; showQuestionModal(); return; } } raf = requestAnimationFrame(loop); }
+
+const modal = document.getElementById('modal'), qBox = document.getElementById('qBox'), timerEl = document.getElementById('timer');
+let modalTimer=null, modalTime=0, currentQ=-1;
+
+function showQuestionModal(){ if(!data.questions || data.questions.length===0){ running=true; loop(); return; } currentQ = Math.floor(Math.random()*data.questions.length); const q = data.questions[currentQ]; qBox.innerHTML = '<strong>Pregunta:</strong><p>'+escapeHtml(q.text)+'</p>'; modal.style.display='flex'; modalTime = q.time||30; timerEl.textContent = modalTime; if(modalTimer) clearInterval(modalTimer); modalTimer = setInterval(()=>{ modalTime--; timerEl.textContent = modalTime; if(modalTime<=0){ clearInterval(modalTimer); modalTimer=null; timeoutModal(); } },1000); }
+
+function closeModal(){ modal.style.display='none'; if(modalTimer) clearInterval(modalTimer); modalTimer=null; running=true; loop(); }
+
+function timeoutModal(){ data.points = Math.max(0,(data.points||0)-1); saveData(); updateStats(); closeModal(); alert('Se acabó el tiempo. Penalizado'); }
+
+document.getElementById('solvedBtn').onclick = ()=>{ data.points = (data.points||0)+1; data.questions.splice(currentQ,1); saveData(); renderQ(); updateStats(); closeModal(); alert('Bien! punto sumado'); }
+document.getElementById('showAnsBtn').onclick = ()=>{ alert('No hay respuesta guardada'); }
+
+function updateStats(){ document.getElementById('points').textContent = data.points||0; document.getElementById('played').textContent = data.sessions||0; }
+
+renderQ(); updateStats(); setPlayer();
+</script>
+</body>
+</html>
