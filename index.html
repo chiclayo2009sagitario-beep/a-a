@@ -343,6 +343,53 @@ if('serviceWorker' in navigator){
     .then(()=> console.log('Service worker registrado'))
     .catch(e => console.log('Service worker fallo', e));
 }
+<script>
+// Parche mínimo para mover el jugador con ← → y con botones táctiles.
+// Requiere que exista en el HTML: #gameArea y #player.
+// Si ya tienes lógica, puede que debas adaptar nombres/estilos.
+
+const player = document.getElementById('player');
+const gameArea = document.getElementById('gameArea');
+if (player && gameArea) {
+  const STEP = 12; // píxeles por tecla
+  // centrar si no tiene posición
+  if (!player.style.left) {
+    player.style.left = (gameArea.clientWidth/2 - player.clientWidth/2) + 'px';
+    player.style.position = 'absolute';
+    player.style.bottom = '8px';
+  }
+
+  function moveBy(dx) {
+    const minX = 0;
+    const maxX = gameArea.clientWidth - player.clientWidth;
+    let x = player.offsetLeft + dx;
+    if (x < minX) x = minX;
+    if (x > maxX) x = maxX;
+    player.style.left = x + 'px';
+  }
+
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowLeft') { moveBy(-STEP); e.preventDefault(); }
+    if (e.key === 'ArrowRight'){ moveBy(STEP); e.preventDefault(); }
+  });
+
+  // Si quieres botones táctiles en la UI, crea dos botones con estos IDs:
+  const leftBtn = document.getElementById('leftTouch');
+  const rightBtn = document.getElementById('rightTouch');
+  if (leftBtn && rightBtn) {
+    leftBtn.addEventListener('touchstart', (ev)=>{ ev.preventDefault(); moveBy(-STEP); });
+    rightBtn.addEventListener('touchstart', (ev)=>{ ev.preventDefault(); moveBy(STEP); });
+  }
+
+  // Ajustar al cambiar tamaño
+  window.addEventListener('resize', ()=> {
+    const cur = player.offsetLeft;
+    const maxX = gameArea.clientWidth - player.clientWidth;
+    if (cur > maxX) player.style.left = maxX + 'px';
+  });
+} else {
+  console.warn('Parche mínimo: falta #player o #gameArea en la página');
+}
 </script>
 </body>
 </html>
