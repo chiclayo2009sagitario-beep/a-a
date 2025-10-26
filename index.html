@@ -87,6 +87,11 @@ document.getElementById('showAnsBtn').onclick = ()=>{ alert('No hay respuesta gu
 function updateStats(){ document.getElementById('points').textContent = data.points||0; document.getElementById('played').textContent = data.sessions||0; }
 
 renderQ(); updateStats(); setPlayer();
+<script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw.js')
+    .then(() => console.log('Service worker registrado'))
+    .catch((e) => console.log('Service worker fallo', e));
 </script>
 </body>
 </html>
