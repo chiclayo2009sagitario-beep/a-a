@@ -3,39 +3,49 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>PreguntaGo - PMV (corregido)</title>
-<link rel="manifest" href="manifest.json">
+<title>PreguntaGo - PMV (IA + mejoras)</title>
 <meta name="theme-color" content="#2ecc71">
 <style>
-  body{font-family:Arial,Helvetica,sans-serif;margin:12px;background:#f4f6f8;color:#222}
-  .card{background:#fff;padding:12px;border-radius:8px;margin:10px 0;box-shadow:0 1px 4px rgba(0,0,0,0.06)}
-  #gameArea{background:#111;height:320px;border-radius:8px;position:relative;overflow:hidden}
-  #player{
-    position:absolute;width:44px;height:44px;bottom:8px;
-    left:50%;transform:translateX(-50%);background:#2ecc71;border-radius:6px;
-    display:flex;align-items:center;justify-content:center;font-weight:bold;color:#043;
-    touch-action: none;
-  }
-  .ob{position:absolute;width:40px;height:40px;background:#e74c3c;border-radius:6px;box-shadow:0 2px 6px rgba(0,0,0,0.3)}
-  #modal{position:fixed;left:0;right:0;top:0;bottom:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.6);z-index:40}
-  .modalContent{background:#fff;padding:12px;border-radius:8px;width:90%;max-width:420px}
+  :root{--bg:#f4f6f8;--card:#fff;--accent:#2ecc71;--accent-dark:#043;--muted:#666}
+  body{font-family:Inter,Arial,Helvetica,sans-serif;margin:12px;background:var(--bg);color:#222}
+  .card{background:var(--card);padding:12px;border-radius:10px;margin:10px 0;box-shadow:0 2px 8px rgba(0,0,0,0.06)}
+  h1{margin:0 0 8px;font-size:20px}
+  #gameArea{background:#0f1720;height:340px;border-radius:10px;position:relative;overflow:hidden;border:1px solid rgba(0,0,0,0.06)}
+  #player{position:absolute;width:48px;height:48px;bottom:12px;left:50%;transform:translateX(-50%);background:var(--accent);border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--accent-dark);touch-action:none;box-shadow:0 6px 18px rgba(46,204,113,0.12)}
+  .ob{position:absolute;width:42px;height:42px;background:#e74c3c;border-radius:8px;box-shadow:0 6px 16px rgba(0,0,0,0.25);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700}
+  .power{background:#ffd166;color:#222;border:2px dashed rgba(0,0,0,0.06);width:34px;height:34px;border-radius:6px;box-shadow:0 8px 20px rgba(0,0,0,0.12)}
+  .power[data-type="shield"]{background:#6ee7b7}
+  .power[data-type="slow"]{background:#93c5fd}
+  .power[data-type="double"]{background:#fbcfe8}
+  #modal{position:fixed;left:0;right:0;top:0;bottom:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.55);z-index:40}
+  .modalContent{background:var(--card);padding:14px;border-radius:10px;width:92%;max-width:520px}
   .controls{margin-top:8px;display:flex;gap:8px}
-  .btn{padding:8px 10px;border-radius:6px;border:0;background:#2ecc71;color:#003;cursor:pointer}
+  .btn{padding:8px 10px;border-radius:8px;border:0;background:var(--accent);color:var(--accent-dark);cursor:pointer}
   .btn.secondary{background:#3498db;color:#fff}
+  .btn.danger{background:#e74c3c;color:#fff}
   .touch-controls{display:flex;gap:8px;margin-top:8px}
-  .touch-controls button{flex:1;padding:10px;border-radius:6px;border:0;background:#ddd}
+  .touch-controls button{flex:1;padding:12px;border-radius:8px;border:0;background:#ddd}
   #qList div{margin-bottom:6px}
+  .meta{font-size:13px;color:var(--muted)}
+  .small{font-size:13px}
+  .status{margin-top:8px;font-size:13px;color:var(--muted)}
+  .aiAnswer{background:#f7f7f8;padding:8px;border-radius:8px;margin-top:8px}
+  .notif{position:fixed;right:18px;bottom:18px;background:#111;color:#fff;padding:8px 12px;border-radius:8px;opacity:0.95}
 </style>
 </head>
 <body>
-<h1>PreguntaGo (PMV)</h1>
+<h1>PreguntaGo (PMV) — versión con IA</h1>
 
 <div class="card">
   <strong>Banco de preguntas</strong>
   <textarea id="qtext" rows="2" style="width:100%" placeholder="Escribe la pregunta aquí..."></textarea>
-  <input id="qtime" placeholder="Tiempo segundos" style="width:120px;margin-top:8px">
-  <button id="addQ" class="btn">Agregar pregunta</button>
+  <div style="display:flex;gap:8px;margin-top:8px">
+    <input id="qtime" placeholder="Tiempo segundos" style="width:140px">
+    <input id="qans" placeholder="Respuesta (opcional)" style="flex:1">
+    <button id="addQ" class="btn">Agregar pregunta</button>
+  </div>
   <div id="qList" style="margin-top:8px"></div>
+  <div class="meta">Consejo: si dejas la respuesta vacía, la IA sugerirá una cuando se solicite.</div>
 </div>
 
 <div class="card">
@@ -45,7 +55,7 @@
   <div class="controls">
     <button id="startBtn" class="btn">Iniciar</button>
     <button id="stopBtn" class="btn secondary">Detener</button>
-    <button id="resetBtn" class="btn" style="background:#e74c3c;color:#fff">Reset datos</button>
+    <button id="resetBtn" class="btn danger">Reset datos</button>
   </div>
 
   <!-- Controles táctiles para móvil -->
@@ -53,6 +63,8 @@
     <button id="leftTouch">◀</button>
     <button id="rightTouch">▶</button>
   </div>
+
+  <div class="status small">Usa flechas o toques. Para la IA: asegúrate de tener <code>server.js</code> corriendo en <code>http://localhost:3000</code>.</div>
 </div>
 
 <div id="modal">
@@ -60,9 +72,11 @@
     <div id="qBox"></div>
     <div style="display:flex;gap:8px;margin-top:8px">
       <button id="solvedBtn" class="btn">Ya lo hice</button>
-      <button id="showAnsBtn" class="btn secondary">Mostrar respuesta</button>
+      <button id="checkAnsBtn" class="btn secondary">Comprobar</button>
+      <button id="showAnsBtn" class="btn" style="background:#6c757d;color:#fff">Sugerencia IA</button>
     </div>
     <div style="margin-top:8px">Tiempo: <span id="timer">0</span>s</div>
+    <div id="modalMsg" class="small" style="margin-top:8px;color:#666"></div>
   </div>
 </div>
 
@@ -71,20 +85,13 @@
   <div id="stats">Puntos: <span id="points">0</span> | Sesiones: <span id="played">0</span></div>
 </div>
 
-<script>
-/* -------------------------
-   Correciones principales realizadas:
-   - Eliminé scripts duplicados y variables redeclaradas (p. ej. 'player').
-   - Obstáculos aparecen desde arriba y se mueven hacia abajo (spawn + velocidad).
-   - Al chocar se muestra el modal con la pregunta tomada del banco (qtext -> qList), y se pausa el juego.
-   - "Ya lo hice" suma punto, elimina la pregunta y REANUDA el juego correctamente.
-   - Ajustes de colisiones y posicionamiento responsive.
+<div id="notify" class="notif" style="display:none"></div>
 
-   Puedes copiar/pegar este archivo (index.html) y abrirlo en un navegador.
-   ------------------------- */
+<script>
+/* Versión mejorada: integración IA (server local), validación de respuestas, power-ups y UX sin alerts agresivas */
 
 const STORAGE_KEY = 'preguntago_v1';
-function loadData(){ try{ return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {questions:[], points:0, sessions:0}; }catch(e){ return {questions:[], points:0, sessions:0}; } }
+function loadData(){ try{ return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {questions:[], points:0, sessions:0, aiCache:{}}; }catch(e){ return {questions:[], points:0, sessions:0, aiCache:{}}; } }
 function saveData(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }
 let data = loadData();
 
@@ -98,22 +105,22 @@ function renderQ(){
     const d = document.createElement('div');
     d.style.padding = '6px';
     d.innerHTML = '<strong>Q'+(i+1)+' ('+(q.time||30)+'s)</strong><div>'+escapeHtml(q.text)+'</div>' +
-                  '<button data-i="'+i+'" class="del" style="margin-top:6px">Eliminar</button>';
+                  '<div style="display:flex;gap:8px;margin-top:6px"><button data-i="'+i+'" class="del">Eliminar</button>' +
+                  '<button data-i="'+i+'" class="edit">Editar</button></div>';
     qListEl.appendChild(d);
   });
-  Array.from(document.getElementsByClassName('del')).forEach(b=>{
-    b.onclick = ()=>{ data.questions.splice(+b.dataset.i,1); saveData(); renderQ(); };
-  });
+  Array.from(document.getElementsByClassName('del')).forEach(b=>{ b.onclick = ()=>{ data.questions.splice(+b.dataset.i,1); saveData(); renderQ(); }; });
+  Array.from(document.getElementsByClassName('edit')).forEach(b=>{ b.onclick = ()=>{ const idx=+b.dataset.i; document.getElementById('qtext').value = data.questions[idx].text; document.getElementById('qtime').value = data.questions[idx].time||30; document.getElementById('qans').value = data.questions[idx].answer||''; data.questions.splice(idx,1); saveData(); renderQ(); }; });
 }
 
-/* -------------------------
-   Elementos del juego
-   ------------------------- */
+/* ------------------------- Juego ------------------------- */
 const gameArea = document.getElementById('gameArea');
 const player = document.getElementById('player');
 const modal = document.getElementById('modal');
 const qBox = document.getElementById('qBox');
 const timerEl = document.getElementById('timer');
+const modalMsg = document.getElementById('modalMsg');
+const notifyEl = document.getElementById('notify');
 
 let running = false;
 let obstacles = [];
@@ -122,203 +129,171 @@ let spawnCounter = 0;
 let currentQIndex = -1;
 let modalTimer = null;
 let modalTime = 0;
-let points = data.points || 0;
 
-/* Parámetros ajustables */
-const PLAYER_SPEED = 12;     // px por movimiento de tecla
-const SPAWN_EVERY = 45;      // frames entre spawns
-const OB_MIN_SPEED = 1.6;
-const OB_MAX_SPEED = 3.0;
+/* Game params (dynamic later) */
+let PLAYER_SPEED = 12;     // px per key
+let SPAWN_EVERY = 45;      // frames between spawns
+let OB_MIN_SPEED = 1.6;
+let OB_MAX_SPEED = 3.0;
 
-/* Posicionar jugador inicialmente (centrado en X) */
-function centerPlayer(){
-  player.style.left = (gameArea.clientWidth/2 - player.clientWidth/2) + 'px';
-}
-centerPlayer();
-window.addEventListener('resize', centerPlayer);
+let powerInterval = null;
+let holdInterval = null;
+let doublePointsUntil = 0;
+let shieldUntil = 0;
 
-/* Movimiento lateral (teclado y táctil) */
+/* Center player */
+function centerPlayer(){ player.style.left = (gameArea.clientWidth/2 - player.clientWidth/2) + 'px'; }
+centerPlayer(); window.addEventListener('resize', centerPlayer);
+
+/* Movement */
 function movePlayerBy(dx){
-  const minX = 0;
-  const maxX = gameArea.clientWidth - player.clientWidth;
-  let cur = player.offsetLeft;
-  cur = Math.max(minX, Math.min(maxX, cur + dx));
-  player.style.left = cur + 'px';
+  const minX = 0; const maxX = gameArea.clientWidth - player.clientWidth; let cur = player.offsetLeft; cur = Math.max(minX, Math.min(maxX, cur + dx)); player.style.left = cur + 'px';
 }
-window.addEventListener('keydown', (e)=>{
-  // permitimos mover incluso si no está corriendo (opcional), pero aquí respetamos la lógica original:
-  if(!running) return;
-  if(e.key === 'ArrowLeft') { movePlayerBy(-PLAYER_SPEED); e.preventDefault(); }
-  else if(e.key === 'ArrowRight'){ movePlayerBy(PLAYER_SPEED); e.preventDefault(); }
-});
+window.addEventListener('keydown', (e)=>{ if(!running) return; if(e.key==='ArrowLeft'){ movePlayerBy(-PLAYER_SPEED); e.preventDefault(); } else if(e.key==='ArrowRight'){ movePlayerBy(PLAYER_SPEED); e.preventDefault(); } });
 
-/* Touch controls (un toque mueve; si quieres mantener pulsado, habría que usar touchmove/interval) */
-document.getElementById('leftTouch').addEventListener('touchstart', (e)=>{ e.preventDefault(); if(running) movePlayerBy(-PLAYER_SPEED); });
-document.getElementById('rightTouch').addEventListener('touchstart', (e)=>{ e.preventDefault(); if(running) movePlayerBy(PLAYER_SPEED); });
+/* Touch: support hold */
+function startHold(dir){ if(holdInterval) clearInterval(holdInterval); holdInterval = setInterval(()=> movePlayerBy(dir * PLAYER_SPEED), 120); }
+function stopHold(){ if(holdInterval) clearInterval(holdInterval); holdInterval = null; }
+document.getElementById('leftTouch').addEventListener('touchstart', (e)=>{ e.preventDefault(); if(running) startHold(-1); });
+document.getElementById('leftTouch').addEventListener('touchend', stopHold);
+document.getElementById('rightTouch').addEventListener('touchstart', (e)=>{ e.preventDefault(); if(running) startHold(1); });
+document.getElementById('rightTouch').addEventListener('touchend', stopHold);
 
-/* Generar obstáculos: spawn desde arriba en x aleatorio */
+/* Spawn obstacle or power-up */
 function spawnObstacle(){
-  const ob = document.createElement('div');
-  ob.className = 'ob';
-  const width = 40;
-  const x = Math.random() * (gameArea.clientWidth - width);
-  const startY = -60; // fuera del área por arriba
-  ob.style.left = x + 'px';
-  ob.style.top = startY + 'px';
+  // small chance to spawn power-up
+  if(Math.random() < 0.08){ spawnPowerUp(); return; }
+  const ob = document.createElement('div'); ob.className='ob'; const width=42; const x=Math.random()*(gameArea.clientWidth - width); const startY = -80; ob.style.left = x+'px'; ob.style.top = startY+'px'; ob.textContent = '';
   gameArea.appendChild(ob);
-  const speed = OB_MIN_SPEED + Math.random() * (OB_MAX_SPEED - OB_MIN_SPEED);
-  obstacles.push({el: ob, x: x, y: startY, w: width, h: width, speed: speed});
+  const speed = OB_MIN_SPEED + Math.random()*(OB_MAX_SPEED - OB_MIN_SPEED);
+  obstacles.push({el:ob, x:x, y:startY, w:width, h:width, speed});
 }
 
-/* Detección de colisión AABB */
-function rectsIntersect(a, b){
-  return !(a.x + a.w < b.x || a.x > b.x + b.w || a.y + a.h < b.y || a.y > b.y + b.h);
-}
+function spawnPowerUp(){ const p = document.createElement('div'); p.className='power'; const types=['shield','slow','double']; const type = types[Math.floor(Math.random()*types.length)]; p.dataset.type = type; p.title = type; const w=34; const x=Math.random()*(gameArea.clientWidth - w); p.style.left = x+'px'; p.style.top = '-60px'; p.innerText = type==='shield'?'S':(type==='slow'?'—':'×'); gameArea.appendChild(p); const speed = 0.9 + Math.random()*0.8; obstacles.push({el:p, x:x, y:-60, w:w, h:w, speed, isPower:true}); }
 
-/* Loop principal */
+function rectsIntersect(a,b){ return !(a.x + a.w < b.x || a.x > b.x + b.w || a.y + a.h < b.y || a.y > b.y + b.h); }
+
+/* Main loop */
 function loop(){
   if(!running) return;
   spawnCounter++;
-  if(spawnCounter % SPAWN_EVERY === 0){ spawnObstacle(); }
+  if(spawnCounter % SPAWN_EVERY === 0) spawnObstacle();
 
-  for(let i = obstacles.length - 1; i >= 0; i--){
+  for(let i=obstacles.length-1;i>=0;i--){
     const o = obstacles[i];
-    o.y += o.speed;
-    o.el.style.top = o.y + 'px';
+    o.y += o.speed; o.el.style.top = o.y + 'px';
+    if(o.y > gameArea.clientHeight + 100){ o.el.remove(); obstacles.splice(i,1); continue; }
 
-    // remover si sale por debajo
-    if(o.y > gameArea.clientHeight + 80){ o.el.remove(); obstacles.splice(i,1); continue; }
+    const playerRect = { x: player.offsetLeft, y: player.offsetTop, w: player.clientWidth, h: player.clientHeight };
+    const obRect = { x: o.x, y: o.y, w: o.w, h: o.h };
 
-    // rect jugador
-    const playerRect = {
-      x: player.offsetLeft,
-      y: player.offsetTop,
-      w: player.clientWidth,
-      h: player.clientHeight
-    };
-    const obRect = {x: o.x, y: o.y, w: o.w, h: o.h};
     if(rectsIntersect(playerRect, obRect)){
-      // colisión -> detener juego y abrir modal
-      stopGame();
-      onCollision();
-      return;
+      if(o.isPower){ // collect power
+        applyPower(o.el.dataset.type); o.el.remove(); obstacles.splice(i,1); continue;
+      }
+      // if shield active, consume shield instead of stopping
+      if(Date.now() < shieldUntil){ showNotification('Escudo activado: evadido'); o.el.remove(); obstacles.splice(i,1); continue; }
+      stopGame(); onCollision(); return;
     }
   }
-
   rafId = requestAnimationFrame(loop);
 }
 
-/* Iniciar / detener / reset */
-function startGame(){
-  if(running) return;
-  running = true;
-  data.sessions = (data.sessions || 0) + 1;
-  saveData(); updateStats();
-  // limpiar obstaculos previos para empezar limpio
-  obstacles.forEach(o=>o.el.remove());
-  obstacles = [];
-  spawnCounter = 0;
-  rafId = requestAnimationFrame(loop);
-}
-function stopGame(){
-  running = false;
-  if(rafId) cancelAnimationFrame(rafId);
-  rafId = null;
-}
-function resetData(){
-  if(!confirm('Resetear datos?')) return;
-  data = {questions:[], points:0, sessions:0};
-  saveData(); renderQ(); updateStats();
-  alert('Reset OK');
-}
+/* Start/stop/reset */
+function startGame(){ if(running) return; running=true; data.sessions=(data.sessions||0)+1; saveData(); updateStats(); obstacles.forEach(o=>o.el.remove()); obstacles=[]; spawnCounter=0; rafId=requestAnimationFrame(loop); }
+function stopGame(){ running=false; if(rafId) cancelAnimationFrame(rafId); rafId=null; }
+function resetData(){ if(!confirm('Resetear datos?')) return; data={questions:[], points:0, sessions:0, aiCache:{}}; saveData(); renderQ(); updateStats(); showNotification('Datos reseteados'); }
 
-/* Cuando ocurre una colisión: mostrar modal con pregunta (si hay) o aviso */
-function onCollision(){
-  if(!data.questions || data.questions.length === 0){
-    alert('¡Choque! No hay preguntas guardadas — juego detenido. Agrega preguntas para jugar.');
-    return;
-  }
-  currentQIndex = Math.floor(Math.random() * data.questions.length);
-  const q = data.questions[currentQIndex];
-  qBox.innerHTML = '<strong>Pregunta:</strong><p>' + escapeHtml(q.text) + '</p>';
-  modal.style.display = 'flex';
-  modalTime = q.time || 30;
-  timerEl.textContent = modalTime;
+/* Collision: show modal with question */
+function onCollision(){ if(!data.questions || data.questions.length===0){ showNotification('Choque: no hay preguntas guardadas'); return; } currentQIndex = Math.floor(Math.random()*data.questions.length); const q = data.questions[currentQIndex]; // build modal
+  qBox.innerHTML = '<strong>Pregunta:</strong><p>'+escapeHtml(q.text)+'</p>' +
+                   '<div style="margin-top:8px"><input id="userAns" placeholder="Escribe tu respuesta" style="width:100%;padding:8px;border-radius:6px;border:1px solid #ddd"></div>';
+  modal.style.display = 'flex'; modalTime = q.time || 30; timerEl.textContent = modalTime; modalMsg.textContent='';
   if(modalTimer) clearInterval(modalTimer);
-  modalTimer = setInterval(()=>{
-    modalTime--;
-    timerEl.textContent = modalTime;
-    if(modalTime <= 0){ clearInterval(modalTimer); modalTimer = null; timeoutModal(); }
-  },1000);
+  modalTimer = setInterval(()=>{ modalTime--; timerEl.textContent = modalTime; if(modalTime<=0){ clearInterval(modalTimer); modalTimer=null; timeoutModal(); } },1000);
 }
 
-/* Cerrar modal y reanudar juego */
-function resumeGame(){
-  modal.style.display = 'none';
-  if(modalTimer) { clearInterval(modalTimer); modalTimer = null; }
-  // reanudar
-  if(!running){ running = true; rafId = requestAnimationFrame(loop); }
-}
+function resumeGame(){ modal.style.display='none'; if(modalTimer){ clearInterval(modalTimer); modalTimer=null; } if(!running){ running=true; rafId=requestAnimationFrame(loop); } }
 
-/* Timeout de modal: penaliza y deja detenido */
-function timeoutModal(){
-  data.points = Math.max(0, (data.points||0) - 1);
-  saveData(); updateStats();
-  modal.style.display = 'none';
-  alert('Se acabó el tiempo. Penalizado');
-  running = false;
-}
+function timeoutModal(){ data.points = Math.max(0,(data.points||0)-1); saveData(); updateStats(); modal.style.display='none'; showNotification('Se acabó el tiempo. Penalizado'); running=false; }
 
-/* Botones del modal */
+/* Buttons inside modal */
 document.getElementById('solvedBtn').onclick = ()=>{
-  data.points = (data.points||0) + 1;
-  // eliminar la pregunta respondida
-  if(currentQIndex >= 0 && currentQIndex < data.questions.length){
-    data.questions.splice(currentQIndex, 1);
+  // check user answer if exists
+  const q = data.questions[currentQIndex]; const input = document.getElementById('userAns'); const user = input ? (input.value||'').trim() : '';
+  if(q && q.answer && q.answer.trim().length>0){ // there's an expected answer
+    if(user.toLowerCase() === (q.answer||'').toLowerCase()){
+      addPointAndRemoveQuestion();
+    } else { modalMsg.textContent='Respuesta incorrecta. Puedes intentar otra vez o pedir sugerencia.'; }
+  } else {
+    // no predefined answer: accept "Ya lo hice" as correct
+    addPointAndRemoveQuestion();
   }
-  saveData(); renderQ(); updateStats();
-  modal.style.display = 'none';
-  alert('¡Bien! Punto sumado. Volviendo al juego...');
-  // reanudar juego
-  resumeGame();
 };
 
-document.getElementById('showAnsBtn').onclick = ()=>{ alert('No hay respuesta guardada'); };
+document.getElementById('checkAnsBtn').onclick = ()=>{
+  // same behavior as solvedBtn but gives feedback
+  const q = data.questions[currentQIndex]; const input = document.getElementById('userAns'); const user = input ? (input.value||'').trim() : '';
+  if(q && q.answer && q.answer.trim().length>0){ if(user.toLowerCase() === (q.answer||'').toLowerCase()){ addPointAndRemoveQuestion(); } else { modalMsg.textContent = 'Incorrecto. Revisa y vuelve a intentar.'; } }
+  else { modalMsg.textContent = 'No hay respuesta guardada para esta pregunta. Puedes usar Sugerencia IA.'; }
+};
 
-/* Actualizar estadísticas en la UI */
-function updateStats(){
-  document.getElementById('points').textContent = data.points || 0;
-  document.getElementById('played').textContent = data.sessions || 0;
+document.getElementById('showAnsBtn').onclick = async ()=>{
+  const q = data.questions[currentQIndex]; if(!q) return;
+  // if we have stored answer, show it first
+  if(q.answer && q.answer.trim().length>0){ modalMsg.textContent = 'Respuesta guardada: '+q.answer; return; }
+  // else try cached AI answer
+  const key = q.text.trim(); if(data.aiCache && data.aiCache[key]){ modalMsg.innerHTML = '<div class="aiAnswer">'+escapeHtml(data.aiCache[key])+'</div>'; return; }
+  // call server AI
+  modalMsg.textContent = 'Buscando sugerencia...';
+  const ans = await pedirIA(q.text);
+  modalMsg.innerHTML = '<div class="aiAnswer">'+escapeHtml(ans)+'</div>';
+  // cache locally
+  data.aiCache = data.aiCache || {}; data.aiCache[key]=ans; saveData();
+};
+
+function addPointAndRemoveQuestion(){ data.points = (data.points||0) + (Date.now() < doublePointsUntil ? 2 : 1); if(currentQIndex>=0 && currentQIndex < data.questions.length) data.questions.splice(currentQIndex,1); saveData(); renderQ(); updateStats(); modal.style.display='none'; showNotification('¡Correcto! Punto sumado'); resumeGame(); }
+
+/* Update stats UI */
+function updateStats(){ document.getElementById('points').textContent = data.points || 0; document.getElementById('played').textContent = data.sessions || 0; }
+
+/* ------------------------- Banco UI ------------------------- */
+document.getElementById('addQ').onclick = ()=>{
+  const t = document.getElementById('qtext').value.trim(); const time = parseInt(document.getElementById('qtime').value) || 30; const ans = document.getElementById('qans').value.trim(); if(!t){ showNotification('Escribe la pregunta'); return; }
+  data.questions.push({text:t, time:time, answer: ans}); saveData(); renderQ(); document.getElementById('qtext').value=''; document.getElementById('qtime').value=''; document.getElementById('qans').value=''; showNotification('Pregunta agregada'); };
+
+/* ------------------------- IA client ------------------------- */
+async function pedirIA(pregunta){
+  try{
+    const res = await fetch("http://localhost:3000/preguntar", { method:'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ pregunta }) });
+    if(!res.ok){ const txt = await res.text(); throw new Error(txt || 'Error servidor'); }
+    const json = await res.json(); return json.respuesta || '(sin respuesta)';
+  }catch(e){ console.error('pedirIA error', e); return 'Error al obtener respuesta de la IA'; }
 }
 
-/* -------------------------
-   Evento UI
-   ------------------------- */
-document.getElementById('addQ').onclick = ()=>{
-  const t = document.getElementById('qtext').value.trim();
-  const time = parseInt(document.getElementById('qtime').value) || 30;
-  if(!t){ alert('Escribe la pregunta'); return; }
-  data.questions.push({text: t, time: time});
-  saveData(); renderQ();
-  document.getElementById('qtext').value = '';
-  document.getElementById('qtime').value = '';
-};
+/* Notifications */
+function showNotification(msg, timeout=2200){ notifyEl.style.display='block'; notifyEl.textContent=msg; setTimeout(()=>{ notifyEl.style.display='none'; }, timeout); }
 
+/* ------------------------- Powerups effects ------------------------- */
+function applyPower(type){ if(type==='shield'){ shieldUntil = Date.now() + 8000; showNotification('Escudo activado (8s)'); player.style.boxShadow = '0 0 0 6px rgba(110,231,183,0.25)'; setTimeout(()=>{ player.style.boxShadow=''; },8000); }
+  else if(type==='slow'){ OB_MIN_SPEED = Math.max(0.4, OB_MIN_SPEED - 0.9); OB_MAX_SPEED = Math.max(0.8, OB_MAX_SPEED - 0.9); showNotification('Obstáculos ralentizados (6s)'); setTimeout(()=>{ OB_MIN_SPEED += 0.9; OB_MAX_SPEED += 0.9; },6000); }
+  else if(type==='double'){ doublePointsUntil = Date.now() + 10000; showNotification('Doble puntos (10s)'); }
+}
+
+/* ------------------------- Utilidades ------------------------- */
+function showConsole(msg){ console.log(msg); }
+
+/* Inicialización UI */
+renderQ(); updateStats(); centerPlayer();
+
+/* Botones principales */
 document.getElementById('startBtn').onclick = startGame;
 document.getElementById('stopBtn').onclick = stopGame;
 document.getElementById('resetBtn').onclick = resetData;
 
-/* Inicialización */
-renderQ();
-updateStats();
-centerPlayer();
+/* Optional service worker register (silently fail if not present) */
+if('serviceWorker' in navigator){ navigator.serviceWorker.register('./sw.js').then(()=>console.log('sw ok')).catch(()=>{}); }
 
-/* Service Worker (opcional) */
-if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('./sw.js')
-    .then(()=> console.log('Service worker registrado'))
-    .catch(e => console.log('Service worker fallo', e));
-}
 </script>
 </body>
 </html>
