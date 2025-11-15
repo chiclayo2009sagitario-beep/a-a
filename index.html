@@ -54,8 +54,18 @@
     <input id="importFile" type="file" style="display:none">
     <button id="importBtn" class="smallBtn">Importar</button>
   </div>
+
+  <div style="margin-top:8px">
+    <label class="meta">Pega varias preguntas (una por línea). Formatos comunes:</label>
+    <div class="meta">- Pregunta | Respuesta | 30</div>
+    <div class="meta">- Pregunta - Respuesta - 45</div>
+    <div class="meta">- Pregunta? Respuesta (si usas '?', se separa automáticamente)</div>
+    <textarea id="bulkText" rows="4" style="width:100%;margin-top:6px" placeholder="Pega aquí 10 preguntas, una por línea. El parser intentará extraer pregunta, respuesta y tiempo."></textarea>
+    <div style="margin-top:6px;display:flex;gap:8px"><button id="parseBulkBtn" class="smallBtn">Agregar desde texto</button><button id="clearBulkBtn" class="smallBtn">Limpiar</button></div>
+  </div>
+
   <div id="qList" style="margin-top:8px"></div>
-  <div class="meta">Consejo: si dejas la respuesta vacía, la IA sugerirá una cuando se solicite.</div>
+  <div class="meta">Consejo: si dejas la respuesta vacía la IA puede sugerir una.</div>
 </div>
 
 <div class="card">
@@ -68,7 +78,6 @@
     <button id="resetBtn" class="btn danger">Reset datos</button>
   </div>
 
-  <!-- Controles táctiles para móvil -->
   <div class="touch-controls">
     <button id="leftTouch">◀</button>
     <button id="rightTouch">▶</button>
@@ -113,16 +122,16 @@
 <div id="notify" class="notif" style="display:none"></div>
 
 <script>
-/* Versión corregida y robusta: arreglos de reanudación y sección de música */
+/* Corregido: reanudado del juego, parseo masivo y audio */
 const RENDER_URL = "https://mi-servidor-ia-9tix.onrender.com/preguntar";
 const STORAGE_KEY = 'preguntago_v1_v2';
 
-/* --- Data --- */
+/* Data */
 function loadData(){ try{ return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {questions:[], points:0, sessions:0, aiCache:{}}; }catch(e){ return {questions:[], points:0, sessions:0, aiCache:{}}; } }
 function saveData(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }
 let data = loadData();
 
-/* --- DOM refs --- */
+/* DOM refs */
 const qListEl = document.getElementById('qList');
 const notifyEl = document.getElementById('notify');
 const gameArea = document.getElementById('gameArea');
@@ -132,27 +141,27 @@ const qBox = document.getElementById('qBox');
 const timerEl = document.getElementById('timer');
 const modalMsg = document.getElementById('modalMsg');
 
-/* --- util --- */
-function escapeHtml(s){ return (s+'').replace(/[&<>\"']/g,function(m){ return {'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":"&#39;"}[m]; }); }
+/* util */
+function escapeHtml(s){ return (s+'').replace(/[&<>\"']/g,function(m){ return {'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":\"&#39;\"}[m]; }); }
 function showNotification(msg, timeout=2200){ notifyEl.style.display='block'; notifyEl.textContent=msg; setTimeout(()=>{ notifyEl.style.display='none'; }, timeout); }
 
-/* --- render preguntas --- */
+/* render preguntas */
 function renderQ(){
   qListEl.innerHTML = '';
-  if(!data.questions || data.questions.length === 0){ qListEl.innerHTML = '<div style="color:#666">No hay preguntas</div>'; return; }
+  if(!data.questions || data.questions.length === 0){ qListEl.innerHTML = '<div style=\"color:#666\">No hay preguntas</div>'; return; }
   data.questions.forEach((q,i)=>{
     const d = document.createElement('div');
     d.style.padding = '6px';
     d.innerHTML = '<strong>Q'+(i+1)+' ('+(q.time||45)+'s)</strong><div>'+escapeHtml(q.text)+'</div>' +
-                  '<div style="display:flex;gap:8px;margin-top:6px"><button data-i="'+i+'" class="del">Eliminar</button>' +
-                  '<button data-i="'+i+'" class="edit">Editar</button></div>';
+                  '<div style=\"display:flex;gap:8px;margin-top:6px\"><button data-i=\"'+i+'\" class=\"del\">Eliminar</button>' +
+                  '<button data-i=\"'+i+'\" class=\"edit\">Editar</button></div>';
     qListEl.appendChild(d);
   });
   Array.from(document.getElementsByClassName('del')).forEach(b=>{ b.onclick = ()=>{ data.questions.splice(+b.dataset.i,1); saveData(); renderQ(); }; });
   Array.from(document.getElementsByClassName('edit')).forEach(b=>{ b.onclick = ()=>{ const idx=+b.dataset.i; document.getElementById('qtext').value = data.questions[idx].text; document.getElementById('qtime').value = data.questions[idx].time||45; document.getElementById('qans').value = data.questions[idx].answer||''; data.questions.splice(idx,1); saveData(); renderQ(); }; });
 }
 
-/* --- juego --- */
+/* juego */
 let running = false;
 let obstacles = [];
 let rafId = null;
@@ -170,8 +179,6 @@ let OB_MAX_SPEED = 3.0;
 let holdInterval = null;
 let doublePointsUntil = 0;
 let shieldUntil = 0;
-
-/* collision lock -> evita multiples modales a la vez */
 let collisionLocked = false;
 
 /* center */
@@ -354,7 +361,7 @@ document.getElementById('checkAnsBtn').onclick = ()=>{
     if(user.toLowerCase() === (q.answer||'').toLowerCase()){ addPointAndRemoveQuestion(); }
     else { modalMsg.textContent = 'Incorrecto. Intenta otra vez o usa Sugerencia IA.'; }
   } else {
-    modalMsg.textContent = 'No hay respuesta guardada para esta pregunta. Puedes usar "Sugerencia IA".';
+    modalMsg.textContent = 'No hay respuesta guardada para esta pregunta. Puedes usar \"Sugerencia IA\".';
   }
 };
 
@@ -411,6 +418,49 @@ document.getElementById('addQ').onclick = ()=>{
   showNotification('Pregunta agregada');
 };
 
+/* bulk parse */
+function parseBulkText(raw){
+  const lines = raw.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+  const parsed = [];
+  for(const line of lines){
+    let l = line;
+    // try to extract trailing time formats: "| 30", "- 30s", "(30)", etc.
+    let time = null;
+    const timeMatch = l.match(/(?:\|)?\s*\(?\s*(\d{1,3})\s*(?:s|segundos|seg)?\s*\)?\s*$/i);
+    if(timeMatch){ time = parseInt(timeMatch[1]); l = l.slice(0, timeMatch.index).trim(); }
+    else{
+      const tm2 = l.match(/[-;]\s*(\d{1,3})\s*(s|segundos)?\s*$/i);
+      if(tm2){ time = parseInt(tm2[1]); l = l.slice(0, tm2.index).trim(); }
+    }
+    if(!time) time = 45;
+
+    // split by common separators
+    let parts = l.split('|');
+    if(parts.length===1) parts = l.split(/ - | — |;|::|\t/);
+
+    let question = '', answer = '';
+    if(parts.length>=2){ question = parts[0].trim(); answer = parts.slice(1).join('|').trim(); }
+    else{
+      const qpos = l.indexOf('?');
+      if(qpos>=0){ question = l.slice(0,qpos+1).trim(); answer = l.slice(qpos+1).trim(); }
+      else{ question = l.trim(); answer = ''; }
+    }
+    if(question) parsed.push({text:question, answer:answer, time:Math.max(5, Math.min(600, time))});
+  }
+  return parsed;
+}
+
+document.getElementById('parseBulkBtn').addEventListener('click', ()=>{
+  const raw = document.getElementById('bulkText').value || '';
+  if(!raw.trim()){ showNotification('Pega el texto con las preguntas'); return; }
+  const items = parseBulkText(raw);
+  if(items.length===0){ showNotification('No se encontraron preguntas válidas'); return; }
+  data.questions = data.questions.concat(items);
+  saveData(); renderQ(); showNotification('Agregadas '+items.length+' preguntas');
+});
+
+document.getElementById('clearBulkBtn').addEventListener('click', ()=>{ document.getElementById('bulkText').value=''; showNotification('Texto borrado'); });
+
 /* export / import */
 document.getElementById('exportBtn').onclick = ()=>{
   const blob = new Blob([JSON.stringify(data.questions, null, 2)], {type:'application/json'});
@@ -424,7 +474,7 @@ document.getElementById('importFile').addEventListener('change', (e)=>{
   reader.readAsText(f);
 });
 
-/* --- IA client (uses Render URL) --- */
+/* IA client */
 async function pedirIA(pregunta){
   const controller = new AbortController();
   const timeoutId = setTimeout(()=> controller.abort(), 12000);
@@ -455,7 +505,7 @@ document.getElementById('resetBtn').onclick = resetData;
 /* service worker (ignore errors) */
 if('serviceWorker' in navigator){ navigator.serviceWorker.register('./sw.js').then(()=>console.log('sw ok')).catch(()=>{}); }
 
-/* ---------------------- MÚSICA (simple) ---------------------- */
+/* MÚSICA (simple) */
 let audio = new Audio();
 let currentAudioUrl = null;
 audio.loop = true;
@@ -484,12 +534,11 @@ document.getElementById('loadAudio').addEventListener('click', ()=>{
 document.getElementById('playAudio').addEventListener('click', ()=>{ if(!audio.src){ showNotification('No hay audio cargado'); return; } audio.play().catch(()=>{ showNotification('No se pudo reproducir (posible bloqueo del navegador)'); }); });
 document.getElementById('pauseAudio').addEventListener('click', ()=>{ audio.pause(); });
 
-/* play on start control: handled in startGame() */
-
 /* cleanup blob on unload */
 window.addEventListener('beforeunload', ()=>{ try{ if(currentAudioUrl && currentAudioUrl.startsWith('blob:')) URL.revokeObjectURL(currentAudioUrl); }catch(e){} });
 
 </script>
 </body>
 </html>
+
 
