@@ -77,6 +77,26 @@
   <div class="status small">Usa flechas o toques. Para la IA: servidor público en <code>https://mi-servidor-ia-9tix.onrender.com</code></div>
 </div>
 
+<div class="card">
+  <strong>Música</strong>
+  <div class="row" style="margin-top:8px">
+    <input id="audioFile" type="file" accept="audio/*">
+    <input id="audioUrl" placeholder="O pega URL mp3" style="flex:1">
+  </div>
+  <div class="row" style="margin-top:8px">
+    <button id="loadAudio" class="smallBtn">Cargar</button>
+    <button id="playAudio" class="smallBtn">Reproducir</button>
+    <button id="pauseAudio" class="smallBtn">Pausar</button>
+    <label class="row muted" style="margin-left:auto"><input type="checkbox" id="musicOnStart"> Reproducir al iniciar</label>
+  </div>
+  <div id="audioStatus" class="small muted" style="margin-top:8px">Ningún audio cargado</div>
+</div>
+
+<div class="card">
+  <strong>Stats</strong>
+  <div id="stats">Puntos: <span id="points">0</span> | Sesiones: <span id="played">0</span></div>
+</div>
+
 <div id="modal">
   <div class="modalContent">
     <div id="qBox"></div>
@@ -90,16 +110,10 @@
   </div>
 </div>
 
-<div class="card">
-  <strong>Stats</strong>
-  <div id="stats">Puntos: <span id="points">0</span> | Sesiones: <span id="played">0</span></div>
-</div>
-
 <div id="notify" class="notif" style="display:none"></div>
 
 <script>
-/* Versión corregida y robusta */
-/* Cambia aquí si quieres otro servidor */
+/* Versión corregida y robusta: arreglos de reanudación y sección de música */
 const RENDER_URL = "https://mi-servidor-ia-9tix.onrender.com/preguntar";
 const STORAGE_KEY = 'preguntago_v1_v2';
 
@@ -182,11 +196,9 @@ document.getElementById('rightTouch').addEventListener('touchend', stopHold);
 
 /* spawn */
 function spawnObstacle(){
-  // choose spawn type
   const r = Math.random();
-  if(r < 0.07){ spawnPowerUp(); return; }            // powerups & bonuses
-  if(r < 0.10){ spawnSpecialObstacle(); return; }    // special obstacle
-  // normal obstacle
+  if(r < 0.07){ spawnPowerUp(); return; }
+  if(r < 0.10){ spawnSpecialObstacle(); return; }
   const ob = document.createElement('div');
   ob.className = 'ob';
   const width = 42;
@@ -210,7 +222,6 @@ function spawnPowerUp(){
   const x = Math.random() * (gameArea.clientWidth - w);
   p.style.left = x + 'px';
   p.style.top = '-60px';
-  // icon/text
   p.innerText = type==='shield'?'S':(type==='slow'?'—':(type==='double'?'×':(type==='coin'?'¢':'★')));
   gameArea.appendChild(p);
   const speed = 0.9 + Math.random()*0.8;
@@ -218,7 +229,6 @@ function spawnPowerUp(){
 }
 
 function spawnSpecialObstacle(){
-  // special slow-dropping big obstacle
   const ob = document.createElement('div');
   ob.className = 'ob';
   ob.style.width = '64px';
@@ -255,26 +265,20 @@ function loop(){
     const obRect = { x: o.x, y: o.y, w: o.w, h: o.h };
 
     if(rectsIntersect(playerRect, obRect)){
-      // powerups / bonuses are collected immediately WITHOUT opening modal
       if(o.type === 'power'){
         const t = o.powerType;
-        // coin/star -> immediate points
         if(t === 'coin'){ data.points = (data.points||0) + 1; saveData(); updateStats(); showNotification('Moneda recogida +1'); }
         else if(t === 'star'){ data.points = (data.points||0) + 3; saveData(); updateStats(); showNotification('Estrella! +3'); }
         else { applyPower(t); }
-        o.el.remove(); obstacles.splice(i,1);
-        continue;
+        o.el.remove(); obstacles.splice(i,1); continue;
       }
-      // if shield active, consume shield instead of stopping
-      if(Date.now() < shieldUntil){
-        showNotification('Escudo activado: evadido');
-        o.el.remove(); obstacles.splice(i,1);
-        continue;
-      }
-      // avoid multiple collisions at the same time
+      if(Date.now() < shieldUntil){ showNotification('Escudo activado: evadido'); o.el.remove(); obstacles.splice(i,1); continue; }
       if(collisionLocked) { o.el.remove(); obstacles.splice(i,1); continue; }
+
+      // remove collided obstacle to avoid repeated collisions, lock and open modal
+      const collided = obstacles.splice(i,1)[0];
+      if(collided && collided.el) collided.el.remove();
       collisionLocked = true;
-      stopGame();
       onCollision();
       return;
     }
@@ -284,32 +288,32 @@ function loop(){
 }
 
 /* start/stop/reset */
-function startGame(){ if(running) return; running=true; data.sessions=(data.sessions||0)+1; saveData(); updateStats(); obstacles.forEach(o=>o.el.remove()); obstacles=[]; spawnCounter=0; collisionLocked=false; rafId=requestAnimationFrame(loop); }
+function startGame(){ if(running) return; running=true; data.sessions=(data.sessions||0)+1; saveData(); updateStats(); obstacles.forEach(o=>o.el.remove()); obstacles=[]; spawnCounter=0; collisionLocked=false; rafId=requestAnimationFrame(loop); if(document.getElementById('musicOnStart').checked) try{ audio.play().catch(()=>{}); }catch(e){} }
 function stopGame(){ running=false; if(rafId) cancelAnimationFrame(rafId); rafId=null; }
 function resetData(){ if(!confirm('Resetear datos?')) return; data={questions:[], points:0, sessions:0, aiCache:{}}; saveData(); renderQ(); updateStats(); showNotification('Datos reseteados'); }
 
 /* on collision -> modal */
 function onCollision(){
+  // if no questions, DO NOT stop the game: just notify and continue
   if(!data.questions || data.questions.length===0){
-    showNotification('Choque: no hay preguntas guardadas');
+    showNotification('Choque: no hay preguntas guardadas — no se detiene el juego');
     collisionLocked = false;
     return;
   }
+
+  // stop the game only if we will show modal
+  stopGame();
+
   currentQIndex = Math.floor(Math.random()*data.questions.length);
   const q = data.questions[currentQIndex];
-  if(!q){
-    showNotification('Error interno: no se pudo seleccionar pregunta');
-    collisionLocked = false;
-    return;
-  }
-  // build modal
+  if(!q){ showNotification('Error interno: no se pudo seleccionar pregunta'); collisionLocked = false; if(!running){ running=true; rafId=requestAnimationFrame(loop);} return; }
+
   qBox.innerHTML = '<strong>Pregunta:</strong><p>'+escapeHtml(q.text) + '</p>' +
     '<div style="margin-top:8px"><input id="userAns" placeholder="Escribe tu respuesta" style="width:100%;padding:8px;border-radius:6px;border:1px solid #ddd"></div>';
   modal.style.display = 'flex';
-  modalTime = q.time || 45; // default 45s
+  modalTime = q.time || 45;
   timerEl.textContent = modalTime;
   modalMsg.textContent = '';
-  // enable buttons
   const s = document.getElementById('showAnsBtn'); s.disabled = false;
   document.getElementById('checkAnsBtn').disabled = false;
   document.getElementById('solvedBtn').disabled = false;
@@ -322,7 +326,9 @@ function onCollision(){
 function resumeGame(){ modal.style.display='none'; if(modalTimer){ clearInterval(modalTimer); modalTimer=null; } collisionLocked = false; if(!running){ running=true; rafId=requestAnimationFrame(loop); } }
 
 /* timeout */
-function timeoutModal(){ data.points = Math.max(0,(data.points||0)-1); saveData(); updateStats(); modal.style.display='none'; showNotification('Se acabó el tiempo. Penalizado'); collisionLocked = false; running=false; }
+function timeoutModal(){ data.points = Math.max(0,(data.points||0)-1); saveData(); updateStats(); modal.style.display='none'; showNotification('Se acabó el tiempo. Penalizado'); collisionLocked = false; // resume the game automatically
+  if(!running){ running=true; rafId=requestAnimationFrame(loop); }
+}
 
 /* modal buttons */
 document.getElementById('solvedBtn').onclick = ()=>{
@@ -356,19 +362,14 @@ document.getElementById('showAnsBtn').onclick = async ()=>{
   const q = data.questions[currentQIndex];
   if(!q){ modalMsg.textContent = 'No hay pregunta seleccionada.'; return; }
 
-  // if stored answer -> show immediately
   if(q.answer && q.answer.trim().length>0){
     modalMsg.innerHTML = 'Respuesta guardada: <div class="aiAnswer">'+escapeHtml(q.answer)+'</div>';
     return;
   }
 
   const key = q.text.trim();
-  if(data.aiCache && data.aiCache[key]){
-    modalMsg.innerHTML = '<div class="aiAnswer">'+escapeHtml(data.aiCache[key])+'</div>';
-    return;
-  }
+  if(data.aiCache && data.aiCache[key]){ modalMsg.innerHTML = '<div class="aiAnswer">'+escapeHtml(data.aiCache[key])+'</div>'; return; }
 
-  // call IA with UI feedback
   const btn = document.getElementById('showAnsBtn');
   const original = btn.textContent;
   btn.disabled = true;
@@ -377,15 +378,10 @@ document.getElementById('showAnsBtn').onclick = async ()=>{
 
   const ans = await pedirIA(q.text);
 
-  // restore ui
   btn.disabled = false;
   btn.textContent = original;
-  if(ans){
-    modalMsg.innerHTML = '<div class="aiAnswer">'+escapeHtml(ans)+'</div>';
-    data.aiCache = data.aiCache || {}; data.aiCache[key]=ans; saveData();
-  } else {
-    modalMsg.textContent = 'No se obtuvo respuesta de la IA. Verifica servidor o intenta más tarde.';
-  }
+  if(ans){ modalMsg.innerHTML = '<div class="aiAnswer">'+escapeHtml(ans)+'</div>'; data.aiCache = data.aiCache || {}; data.aiCache[key]=ans; saveData(); }
+  else { modalMsg.textContent = 'No se obtuvo respuesta de la IA. Verifica servidor o intenta más tarde.'; }
 };
 
 /* add point + remove */
@@ -395,7 +391,9 @@ function addPointAndRemoveQuestion(){
   saveData(); renderQ(); updateStats();
   modal.style.display='none';
   showNotification('¡Correcto! Punto sumado');
-  resumeGame();
+  // resume the game
+  collisionLocked = false;
+  if(!running){ running=true; rafId=requestAnimationFrame(loop); }
 }
 
 /* update stats */
@@ -429,23 +427,14 @@ document.getElementById('importFile').addEventListener('change', (e)=>{
 /* --- IA client (uses Render URL) --- */
 async function pedirIA(pregunta){
   const controller = new AbortController();
-  const timeoutId = setTimeout(()=> controller.abort(), 12000); // 12s
+  const timeoutId = setTimeout(()=> controller.abort(), 12000);
   try{
     const res = await fetch(RENDER_URL, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ pregunta }), signal: controller.signal });
     clearTimeout(timeoutId);
-    if(!res.ok){
-      const txt = await res.text().catch(()=>res.statusText);
-      console.error('Error en /preguntar:', res.status, txt);
-      return null;
-    }
+    if(!res.ok){ const txt = await res.text().catch(()=>res.statusText); console.error('Error en /preguntar:', res.status, txt); return null; }
     const json = await res.json();
     return json.respuesta || null;
-  }catch(err){
-    clearTimeout(timeoutId);
-    if(err.name === 'AbortError'){ console.error('Timeout en petición IA'); return null; }
-    console.error('pedirIA fallo:', err);
-    return null;
-  }
+  }catch(err){ clearTimeout(timeoutId); if(err.name === 'AbortError'){ console.error('Timeout en petición IA'); return null; } console.error('pedirIA fallo:', err); return null; }
 }
 
 /* apply power-ups */
@@ -466,6 +455,41 @@ document.getElementById('resetBtn').onclick = resetData;
 /* service worker (ignore errors) */
 if('serviceWorker' in navigator){ navigator.serviceWorker.register('./sw.js').then(()=>console.log('sw ok')).catch(()=>{}); }
 
+/* ---------------------- MÚSICA (simple) ---------------------- */
+let audio = new Audio();
+let currentAudioUrl = null;
+audio.loop = true;
+
+function setAudioSource(url, label){
+  try{ if(currentAudioUrl && currentAudioUrl.startsWith('blob:')) URL.revokeObjectURL(currentAudioUrl); }catch(e){}
+  currentAudioUrl = url;
+  audio.src = url;
+  document.getElementById('audioStatus').textContent = label || 'Audio cargado';
+}
+
+document.getElementById('loadAudio').addEventListener('click', ()=>{
+  const fileInput = document.getElementById('audioFile');
+  const urlInput = document.getElementById('audioUrl').value.trim();
+  if(fileInput.files && fileInput.files[0]){
+    const f = fileInput.files[0];
+    const u = URL.createObjectURL(f);
+    setAudioSource(u, 'Archivo cargado: ' + f.name);
+  } else if(urlInput){
+    setAudioSource(urlInput, 'URL cargada');
+  } else {
+    showNotification('Selecciona un archivo o pega una URL');
+  }
+});
+
+document.getElementById('playAudio').addEventListener('click', ()=>{ if(!audio.src){ showNotification('No hay audio cargado'); return; } audio.play().catch(()=>{ showNotification('No se pudo reproducir (posible bloqueo del navegador)'); }); });
+document.getElementById('pauseAudio').addEventListener('click', ()=>{ audio.pause(); });
+
+/* play on start control: handled in startGame() */
+
+/* cleanup blob on unload */
+window.addEventListener('beforeunload', ()=>{ try{ if(currentAudioUrl && currentAudioUrl.startsWith('blob:')) URL.revokeObjectURL(currentAudioUrl); }catch(e){} });
+
 </script>
 </body>
 </html>
+
